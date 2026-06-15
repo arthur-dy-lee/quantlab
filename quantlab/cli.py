@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import logging
+from pathlib import Path
+
 import typer
 
 from quantlab.bootstrap import build_app
@@ -31,6 +34,15 @@ def _parse_cond(spec: str) -> Condition:
     return c
 
 
+def _fmt_prob(r) -> str:
+    return (
+        f"  样本 N={r.n}  上涨概率 {r.p_up:.1%}  基准率 {r.base_rate:.1%}  edge {r.edge:+.1%}  "
+        f"[95%CI {r.ci_low:.1%}~{r.ci_high:.1%}]\n"
+        f"  平均 {r.mean_ret:+.2%}  中位 {r.median_ret:+.2%}  盈亏比 {r.payoff:.2f}  "
+        f"平均MAE {r.mae:.2%}  可靠? {'是' if r.reliable else '否(样本不足)'}"
+    )
+
+
 @app.command()
 def download(
     symbols: list[str] = typer.Argument(..., help="如 US:AAPL CN:600519"),
@@ -42,7 +54,7 @@ def download(
     dm = build_app()
     metas = dm.download(symbols, start, end, Freq(freq))
     for m in metas:
-        typer.echo(f"{m.symbol:<14} {m.freq}  {m.start}~{m.end}  rows={m.rows}  "
+        typer.echo(f"{m.symbol:<16} {m.freq}  {m.start}~{m.end}  rows={m.rows}  "
                    f"[{m.instrument_type}] src={m.source}")
     typer.echo(f"完成 {len(metas)}/{len(symbols)}")
 
@@ -91,13 +103,79 @@ def stats(
     dm = build_app()
     df = add_indicators(dm.history(symbol))
     r = probability(df, _parse_cond(cond), forward, dm.cfg.stats_min_samples, symbol)
-    typer.echo(
-        f"{symbol}  条件={r.condition}  forward={r.forward}\n"
-        f"  样本 N={r.n}  上涨概率 {r.p_up:.1%}  基准率 {r.base_rate:.1%}  edge {r.edge:+.1%}  "
-        f"[95%CI {r.ci_low:.1%}~{r.ci_high:.1%}]\n"
-        f"  平均 {r.mean_ret:+.2%}  中位 {r.median_ret:+.2%}  盈亏比 {r.payoff:.2f}  "
-        f"平均MAE {r.mae:.2%}  可靠? {'是' if r.reliable else '否(样本不足)'}"
-    )
+    typer.echo(f"{symbol}  条件={r.condition}  forward={r.forward}\n{_fmt_prob(r)}")
+
+
+@app.command()
+def crossmarket(
+    lead: str,
+    target: str,
+    cond: str = typer.Option(..., help='作用在 lead 上, 如 "drop_gt:0.015"'),
+    forward: int = 1,
+    lag: int = 1,
+):
+    """跨市场领先预警（如 US:^IXIC → CN:000300）。"""
+    from quantlab.stats.crossmarket import crossmarket as cm
+
+    dm = build_app()
+    r = cm(dm, lead, target, _parse_cond(cond), forward, lag, dm.cfg.stats_min_samples)
+    typer.echo(f"{r.condition}  forward={forward} lag={lag}\n{_fmt_prob(r)}")
+
+
+@app.command()
+def screen(watchlist: str = typer.Option(..., help="config.yaml 中的主题名")):
+    """对主题标的池做技术面筛选。"""
+    from quantlab.screener.screener import Screener
+
+    dm = build_app()
+    syms = [s.key for s in dm.cfg.watchlists.get(watchlist, [])]
+    if not syms:
+        raise typer.BadParameter(f"watchlist '{watchlist}' 为空或不存在")
+    hits = Screener(dm).run(syms)
+    for h in hits:
+        skip = f"  (跳过 {len(h.skipped)} 条)" if h.skipped else ""
+        typer.echo(f"✓ {h.symbol:<16} {', '.join(h.matched)}{skip}")
+    typer.echo(f"命中 {len(hits)}/{len(syms)}")
+
+
+@app.command()
+def watch(
+    watchlist: str = typer.Option(..., help="config.yaml 中的主题名"),
+    channels: list[str] = typer.Option(["console"]),
+    forward: int = 1,
+):
+    """盯盘扫描一轮并推送（cron 触发，跑完即退）。"""
+    from quantlab.errors import InsufficientData
+    from quantlab.notify.base import NotifyLog, dispatch
+    from quantlab.notify.factory import build_notifiers
+    from quantlab.signals.scanner import SignalScanner, annotate
+    from quantlab.stats.sizing import build_sizer
+
+    dm = build_app()
+    cfg = dm.cfg
+    _setup_run_log(cfg.data_root)
+    log = logging.getLogger("quantlab")
+
+    syms = [s.key for s in cfg.watchlists.get(watchlist, [])]
+    if not syms:
+        raise typer.BadParameter(f"watchlist '{watchlist}' 为空或不存在")
+
+    signals = SignalScanner(dm).scan(syms)
+    notifiers = build_notifiers(cfg)
+    nlog = NotifyLog(Path(cfg.data_root) / "quantlab.db")
+    sizer = build_sizer(cfg)
+
+    n_sent = 0
+    for sig in signals:
+        try:
+            card = annotate(dm, sig, forward, sizer, cfg.stats_min_samples)
+        except InsufficientData:
+            continue
+        if dispatch(card, channels, notifiers, nlog, cfg.notify.throttle_minutes):
+            n_sent += 1
+    msg = f"watch[{watchlist}]: 扫描 {len(syms)} 标的, 触发 {len(signals)} 信号, 推送 {n_sent}"
+    log.info(msg)
+    typer.echo(msg)
 
 
 @app.command()
@@ -108,17 +186,39 @@ def catalog():
         typer.echo("（本地暂无数据，先 download）")
         return
     for m in metas:
-        typer.echo(f"{m.symbol:<14} {m.freq}  {m.start}~{m.end}  rows={m.rows}  "
+        typer.echo(f"{m.symbol:<16} {m.freq}  {m.start}~{m.end}  rows={m.rows}  "
                    f"[{m.instrument_type}] src={m.source}")
 
 
 @app.command()
-def watch(
-    watchlist: str = typer.Option(..., help="config.yaml 中的主题名"),
-    channels: list[str] = typer.Option(["console"]),
+def predict(
+    symbol: str,
+    horizon: int = 1,
+    test_size: float = 0.3,
 ):
-    """盯盘扫描一轮并推送（cron 触发，跑完即退）。M2。"""
-    raise NotImplementedError("TODO(M2): watch")
+    """ML 预测下一根 K 线涨跌（诚实评估，报相对多数类基准的超额）。"""
+    from quantlab.indicators.technical import add_indicators
+    from quantlab.ml.predictor import LogisticPredictor, build_dataset
+
+    dm = build_app()
+    df = add_indicators(dm.history(symbol))
+    X, y = build_dataset(df, horizon)
+    rep = LogisticPredictor().evaluate(X, y, test_size)
+    typer.echo(
+        f"{symbol}  预测 horizon={horizon}\n"
+        f"  准确率 {rep['accuracy']:.1%}  多数类基准 {rep['baseline']:.1%}  "
+        f"超额 {rep['excess']:+.1%}  测试样本 {rep['n_test']}"
+    )
+
+
+def _setup_run_log(data_root: str) -> None:
+    logger = logging.getLogger("quantlab")
+    logger.setLevel(logging.INFO)
+    path = Path(data_root) / "watch.log"
+    if not any(isinstance(h, logging.FileHandler) for h in logger.handlers):
+        h = logging.FileHandler(path, encoding="utf-8")
+        h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        logger.addHandler(h)
 
 
 if __name__ == "__main__":

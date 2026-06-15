@@ -27,8 +27,9 @@ notify = ["requests>=2.31"]
 indicators = ["pandas-ta>=0.3"]   # 可选: 默认指标自研, 装了则可走它
 talib = ["TA-Lib>=0.4"]           # 需系统装 C 库, 故单列
 calendar = ["exchange-calendars>=4"]
+query = ["duckdb>=0.10"]
 dev = ["pytest>=8", "pytest-cov"]
-all = ["quantlab[us,cn,crypto,ml,dashboard,notify,indicators,calendar]"]
+all = ["quantlab[us,cn,crypto,ml,dashboard,notify,indicators,calendar,query]"]
 
 [project.scripts]
 quantlab = "quantlab.cli:app"

@@ -27,12 +27,15 @@ class YFinanceSource(DataSource):
 
     def history(self, sym: Symbol, start, end, freq: Freq) -> HistoryResult:
         yf = self._yf()
+        interval = _INTERVAL.get(freq, "1d")
         try:
             t = yf.Ticker(sym.code)
-            raw = t.history(
-                start=start, end=end, interval=_INTERVAL.get(freq, "1d"),
-                auto_adjust=False, actions=True,
-            )
+            if start is None:
+                # 无起点 → 取全历史（否则 yfinance 默认仅约 1 个月）
+                raw = t.history(period="max", interval=interval, auto_adjust=False, actions=True)
+            else:
+                raw = t.history(start=start, end=end, interval=interval,
+                                auto_adjust=False, actions=True)
         except Exception as e:  # noqa: BLE001
             raise FetchError(f"yfinance 取数失败 {sym.key}: {e}") from e
         if raw is None or raw.empty:

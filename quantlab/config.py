@@ -26,6 +26,8 @@ class SizingConfig:
 class NotifyConfig:
     channels: list[str] = field(default_factory=lambda: ["console"])
     feishu: dict = field(default_factory=dict)
+    telegram: dict = field(default_factory=dict)
+    email: dict = field(default_factory=dict)
     throttle_minutes: int = 30
 
 

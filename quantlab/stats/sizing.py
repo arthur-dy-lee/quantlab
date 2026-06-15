@@ -45,3 +45,11 @@ class KellyConservativeSizer(PositionSizer):
         f = 1.0 if not math.isfinite(b) or b <= 0 else (b * p - (1 - p)) / b
         f = max(0.0, f) * self.kelly_fraction
         return min(f, self.max_position)
+
+
+def build_sizer(cfg) -> PositionSizer:
+    """按 config.sizing.method 构造仓位器。"""
+    s = cfg.sizing
+    if s.method == "kelly_conservative":
+        return KellyConservativeSizer(s.max_position, s.kelly_fraction)
+    return FixedTierSizer(s.max_position)
