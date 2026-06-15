@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quantlab"
+version = "0.1.0"
+description = "本地多市场股票/加密货币分析、统计概率信号与通知平台"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENSE" }
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.26",
+    "pyarrow>=14",
+    "pyyaml>=6",
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+us = ["yfinance>=0.2"]
+cn = ["akshare>=1.12"]
+crypto = ["ccxt>=4"]
+ml = ["scikit-learn>=1.4"]
+dashboard = ["streamlit>=1.30", "plotly>=5"]
+notify = ["requests>=2.31"]
+indicators = ["pandas-ta>=0.3"]   # 可选: 默认指标自研, 装了则可走它
+talib = ["TA-Lib>=0.4"]           # 需系统装 C 库, 故单列
+calendar = ["exchange-calendars>=4"]
+dev = ["pytest>=8", "pytest-cov"]
+all = ["quantlab[us,cn,crypto,ml,dashboard,notify,indicators,calendar]"]
+
+[project.scripts]
+quantlab = "quantlab.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["quantlab*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

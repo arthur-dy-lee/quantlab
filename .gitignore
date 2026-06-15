@@ -228,3 +228,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# QuantLab 本地数据缓存（行情 Parquet + SQLite + 复权因子，不入库）
+/data/
+*.db
