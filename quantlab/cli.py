@@ -59,6 +59,30 @@ def download(
     typer.echo(f"完成 {len(metas)}/{len(symbols)}")
 
 
+@app.command(name="download-all")
+def download_all(
+    market: str = typer.Option("CN", help="目前仅支持 CN 全市场"),
+    workers: int = typer.Option(8, help="并发数（过高易被源限流）"),
+    include_etf: bool = typer.Option(False, help="附带 ETF"),
+    limit: int = typer.Option(0, help="只下前 N 个（0=全部，用于试跑/测速）"),
+):
+    """一次拉取全市场日线到本地（并发 + 断点续传 + 进度日志）。"""
+    from quantlab.universe import download_universe, list_cn_symbols
+
+    if market.upper() != "CN":
+        raise typer.BadParameter("目前仅支持 CN 全市场")
+    dm = build_app()
+    _setup_run_log(dm.cfg.data_root)
+    syms = list_cn_symbols(include_etf=include_etf)
+    if limit:
+        syms = syms[:limit]
+    typer.echo(f"待下载 {len(syms)} 个标的，并发 {workers}（日志见 {dm.cfg.data_root}watch.log）…")
+    res = download_universe(dm, syms, workers=workers)
+    typer.echo(f"完成: ok={res['ok']} fail={res['fail']} / {res['total']}")
+    if res["failed"][:10]:
+        typer.echo(f"失败示例: {res['failed'][:10]}")
+
+
 @app.command()
 def quote(symbol: str):
     """在线（延迟）行情快照。"""

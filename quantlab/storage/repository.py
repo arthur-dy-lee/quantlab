@@ -69,7 +69,7 @@ class BarRepository:
 
     # ---- schema ----
     def _ensure_schema(self) -> None:
-        with sqlite3.connect(self.db_path) as con:
+        with sqlite3.connect(self.db_path, timeout=30) as con:
             con.executescript(_SCHEMA)
 
     # ---- read ----
@@ -90,7 +90,7 @@ class BarRepository:
         return df.sort_index()
 
     def meta(self, sym: Symbol, freq: Freq) -> BarMeta | None:
-        with sqlite3.connect(self.db_path) as con:
+        with sqlite3.connect(self.db_path, timeout=30) as con:
             row = con.execute(
                 'SELECT symbol,freq,start,"end",rows,source,instrument_type,updated_at '
                 "FROM bars_meta WHERE symbol=? AND freq=?",
@@ -99,7 +99,7 @@ class BarRepository:
         return self._row_to_meta(row) if row else None
 
     def catalog(self) -> list[BarMeta]:
-        with sqlite3.connect(self.db_path) as con:
+        with sqlite3.connect(self.db_path, timeout=30) as con:
             rows = con.execute(
                 'SELECT symbol,freq,start,"end",rows,source,instrument_type,updated_at '
                 "FROM bars_meta ORDER BY symbol,freq"
@@ -152,7 +152,7 @@ class BarRepository:
             rows=len(merged), source=source,
             instrument_type=sym.instrument_type.value, updated_at=datetime.now(),
         )
-        with sqlite3.connect(self.db_path) as con:
+        with sqlite3.connect(self.db_path, timeout=30) as con:
             con.execute(
                 'INSERT OR REPLACE INTO bars_meta '
                 '(symbol,freq,start,"end",rows,source,instrument_type,updated_at) '
