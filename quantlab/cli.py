@@ -65,8 +65,11 @@ def download_all(
     workers: int = typer.Option(8, help="并发数（过高易被源限流）"),
     include_etf: bool = typer.Option(False, help="附带 ETF"),
     limit: int = typer.Option(0, help="只下前 N 个（0=全部，用于试跑/测速）"),
+    missing_only: bool = typer.Option(False, help="只补本地尚无缓存的标的（用于失败补漏）"),
 ):
     """一次拉取全市场日线到本地（并发 + 断点续传 + 进度日志）。"""
+    from quantlab.enums import Freq
+    from quantlab.symbols import Symbol
     from quantlab.universe import download_universe, list_cn_symbols
 
     if market.upper() != "CN":
@@ -76,6 +79,8 @@ def download_all(
     syms = list_cn_symbols(include_etf=include_etf)
     if limit:
         syms = syms[:limit]
+    if missing_only:
+        syms = [s for s in syms if dm.repo.meta(Symbol.parse(s), Freq.DAY) is None]
     typer.echo(f"待下载 {len(syms)} 个标的，并发 {workers}（日志见 {dm.cfg.data_root}watch.log）…")
     res = download_universe(dm, syms, workers=workers)
     typer.echo(f"完成: ok={res['ok']} fail={res['fail']} / {res['total']}")
