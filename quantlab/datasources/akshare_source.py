@@ -1,7 +1,12 @@
 """A股/港股数据源 akshare（详细设计 §5.4）。取**不复权**原始价。
 
+按 instrument_type 路由到对应 akshare 接口：
+- 个股: ``stock_zh_a_hist``   - ETF: ``fund_etf_hist_em``   - 指数: ``index_zh_a_hist``
+
 复权事件(actions)拼装留待完善（TODO）：故 CN 当前 qfq/hfq 暂等同 raw，
 复权正确性由合成数据 + yfinance actions 验证。
+
+> 注：A股数据源(东财)需能联网访问；在受限网络/代理下会抛 FetchError。
 """
 
 from __future__ import annotations
@@ -11,9 +16,9 @@ from datetime import date, datetime
 import pandas as pd
 
 from quantlab.datasources.base import DataSource, HistoryResult, Quote
-from quantlab.enums import Freq, Market
+from quantlab.enums import Freq, InstrumentType, Market
 from quantlab.errors import FetchError, SourceUnavailable
-from quantlab.symbols import Symbol
+from quantlab.symbols import Symbol, infer_instrument_type
 
 _PERIOD = {Freq.DAY: "daily", Freq.WEEK: "weekly", Freq.MONTH: "monthly"}
 _RENAME = {
@@ -37,14 +42,20 @@ class AkshareSource(DataSource):
         ak = self._ak()
         if freq not in _PERIOD:
             raise FetchError(f"akshare 不支持周期 {freq}（A股仅日/周/月线）")
-        fmt = lambda d: (d.strftime("%Y%m%d") if isinstance(d, date) else "19900101")  # noqa: E731
+        period = _PERIOD[freq]
+        sd = start.strftime("%Y%m%d") if isinstance(start, date) else "19900101"
+        ed = end.strftime("%Y%m%d") if isinstance(end, date) else "22000101"
+        itype = infer_instrument_type(sym.market, sym.code)
         try:
-            raw = ak.stock_zh_a_hist(
-                symbol=sym.code, period=_PERIOD[freq],
-                start_date=fmt(start) if start else "19900101",
-                end_date=fmt(end) if end else "22000101",
-                adjust="",  # 不复权原始价
-            )
+            if itype == InstrumentType.ETF:
+                raw = ak.fund_etf_hist_em(symbol=sym.code, period=period,
+                                          start_date=sd, end_date=ed, adjust="")
+            elif itype == InstrumentType.INDEX:
+                raw = ak.index_zh_a_hist(symbol=sym.code, period=period,
+                                         start_date=sd, end_date=ed)
+            else:  # 个股
+                raw = ak.stock_zh_a_hist(symbol=sym.code, period=period,
+                                         start_date=sd, end_date=ed, adjust="")
         except Exception as e:  # noqa: BLE001
             raise FetchError(f"akshare 取数失败 {sym.key}: {e}") from e
         if raw is None or raw.empty:
