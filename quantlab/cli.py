@@ -9,7 +9,7 @@ import typer
 
 from quantlab.bootstrap import build_app
 from quantlab.enums import Freq
-from quantlab.stats.conditions import Condition, drop_gt, n_down_days, rsi_lt, vol_spike
+from quantlab.stats.conditions import Condition, drop_gt, n_down_days, rise_gt, rsi_gt, rsi_lt, vol_spike
 
 app = typer.Typer(add_completion=False, help="QuantLab —— 本地多市场分析/统计概率信号/通知")
 
@@ -18,8 +18,10 @@ def _parse_cond(spec: str) -> Condition:
     """``"drop_gt:0.015,n_down:2"`` → 组合 Condition。"""
     builders = {
         "drop_gt": lambda a: drop_gt(float(a)),
+        "rise_gt": lambda a: rise_gt(float(a)),
         "n_down": lambda a: n_down_days(int(a)),
         "rsi_lt": lambda a: rsi_lt(float(a)),
+        "rsi_gt": lambda a: rsi_gt(float(a)),
         "vol_spike": lambda a: vol_spike(float(a) if a else 2.0),
     }
     conds = []

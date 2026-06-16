@@ -46,5 +46,14 @@ def rsi_lt(t: float, n: int = 14) -> Condition:
     return Condition(f"RSI{n}<{t:g}", lambda d: rsi(d[CLOSE], n) < t)
 
 
+def rsi_gt(t: float, n: int = 14) -> Condition:
+    return Condition(f"RSI{n}>{t:g}", lambda d: rsi(d[CLOSE], n) > t)
+
+
+def rise_gt(pct: float) -> Condition:
+    """单日涨幅 > pct（如 0.02 表示涨超 2%）。"""
+    return Condition(f"涨幅>{pct:.1%}", lambda d: d[CLOSE].pct_change() > abs(pct))
+
+
 def vol_spike(k: float = 2.0) -> Condition:
     return Condition(f"放量>{k:g}x", lambda d: d[VOLUME] > k * d[VOLUME].rolling(20).mean())
