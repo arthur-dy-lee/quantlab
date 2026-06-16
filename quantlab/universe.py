@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from quantlab.enums import Freq
 from quantlab.errors import SourceUnavailable
+from quantlab.retry import with_retry
 
 log = logging.getLogger("quantlab")
 
@@ -21,10 +22,11 @@ def list_cn_symbols(include_etf: bool = False) -> list[str]:
         import akshare as ak
     except ImportError as e:
         raise SourceUnavailable("akshare 未安装：pip install -e '.[cn]'") from e
-    df = ak.stock_info_a_code_name()          # columns: code, name
+    # 清单接口内部聚合沪深京，偶发某交易所超时 → 重试，避免整轮崩溃
+    df = with_retry(lambda: ak.stock_info_a_code_name(), retries=4, backoff=2.0, on=(Exception,))
     syms = [f"CN:{c}" for c in df["code"].astype(str)]
     if include_etf:
-        etf = ak.fund_etf_spot_em()           # column: 代码
+        etf = with_retry(lambda: ak.fund_etf_spot_em(), retries=4, backoff=2.0, on=(Exception,))
         syms += [f"CN:{c}" for c in etf["代码"].astype(str)]
     # 去重保序
     seen: set[str] = set()
