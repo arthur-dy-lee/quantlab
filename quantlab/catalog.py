@@ -12,6 +12,14 @@ from pathlib import Path
 import pandas as pd
 
 
+# 常用指数（用交易所前缀，避免与个股代码冲突）
+KNOWN_INDEX = {
+    "CN:sh000001": "上证指数", "CN:sh000300": "沪深300指数",
+    "CN:sz399001": "深证成指", "CN:sz399006": "创业板指",
+    "CN:sh000016": "上证50", "CN:sh000905": "中证500", "CN:sh000688": "科创50",
+}
+
+
 def _names_path(root: str) -> Path:
     return Path(root) / "names.parquet"
 
@@ -42,6 +50,8 @@ def build_names(dm) -> dict[str, str]:
         names.update({f"CN:{c}": n for c, n in zip(etf["代码"].astype(str), etf["名称"].astype(str))})
     except Exception:  # noqa: BLE001 —— 无网/无 akshare 时退化为仅代码
         pass
+
+    names.update(KNOWN_INDEX)            # 常用指数名
 
     for m in dm.catalog():               # 本地已缓存的（含 US/加密）补全
         names.setdefault(m.symbol, m.symbol.split(":", 1)[1])

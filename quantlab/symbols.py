@@ -9,8 +9,7 @@ from quantlab.errors import SymbolParseError
 
 # A股/港股 ETF 代码段（best-effort；source_hint 优先）
 _CN_ETF_PREFIXES = ("51", "56", "58", "159", "15")
-# 明确的指数代码（避免与个股 000001 等冲突，仅收录无歧义者）
-_CN_INDEX_CODES = {"000300", "000905", "000016", "399006"}
+# 指数用交易所前缀表示（如 sh000001 上证指数 / sh000300 沪深300），与个股代码不冲突
 
 
 @dataclass(frozen=True)
@@ -72,7 +71,7 @@ def infer_instrument_type(
         return InstrumentType.STOCK  # US 的 ETF 需 source_hint，否则默认按个股
 
     if market in (Market.CN, Market.HK):
-        if code in _CN_INDEX_CODES:
+        if code[:2].lower() in ("sh", "sz"):     # 指数：sh000001 / sh000300 …
             return InstrumentType.INDEX
         if any(code.startswith(p) for p in _CN_ETF_PREFIXES):
             return InstrumentType.ETF

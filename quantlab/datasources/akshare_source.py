@@ -48,11 +48,12 @@ class AkshareSource(DataSource):
         itype = infer_instrument_type(sym.market, sym.code)
         try:
             if itype == InstrumentType.ETF:
-                raw = ak.fund_etf_hist_em(symbol=sym.code, period=period,
-                                          start_date=sd, end_date=ed, adjust="")
+                # 新浪源（不受东财限流），需 sh/sz 前缀，返回全历史日线
+                ex = "sh" if sym.code[0] == "5" else "sz"
+                raw = ak.fund_etf_hist_sina(symbol=f"{ex}{sym.code}")
             elif itype == InstrumentType.INDEX:
-                raw = ak.index_zh_a_hist(symbol=sym.code, period=period,
-                                         start_date=sd, end_date=ed)
+                # 指数走新浪源（含 sh/sz 前缀，全历史日线；周/月由上层重采样）
+                raw = ak.stock_zh_index_daily(symbol=sym.code)
             else:  # 个股
                 raw = ak.stock_zh_a_hist(symbol=sym.code, period=period,
                                          start_date=sd, end_date=ed, adjust="")

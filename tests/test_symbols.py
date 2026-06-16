@@ -28,5 +28,7 @@ def test_infer_type():
     assert infer_instrument_type(Market.CN, "159819") == InstrumentType.ETF
     assert infer_instrument_type(Market.CN, "600519") == InstrumentType.STOCK
     assert infer_instrument_type(Market.US, "^IXIC") == InstrumentType.INDEX
+    assert infer_instrument_type(Market.CN, "sh000300") == InstrumentType.INDEX
+    assert infer_instrument_type(Market.CN, "000016") == InstrumentType.STOCK  # 不再误判为指数
     assert infer_instrument_type(Market.US, "QQQ", source_hint="ETF") == InstrumentType.ETF
     assert infer_instrument_type(Market.CRYPTO, "BTC/USDT") == InstrumentType.CRYPTO
