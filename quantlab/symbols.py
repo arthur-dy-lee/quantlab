@@ -8,7 +8,8 @@ from quantlab.enums import InstrumentType, Market
 from quantlab.errors import SymbolParseError
 
 # A股/港股 ETF 代码段（best-effort；source_hint 优先）
-_CN_ETF_PREFIXES = ("51", "56", "58", "159", "15")
+# 沪市基金/ETF 一律 5 开头（个股是 6 开头）；深市 ETF 15x、LOF 16x
+_CN_ETF_PREFIXES = ("5", "15", "16")
 # 指数用交易所前缀表示（如 sh000001 上证指数 / sh000300 沪深300），与个股代码不冲突
 
 
