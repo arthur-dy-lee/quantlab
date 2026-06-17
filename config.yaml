@@ -14,6 +14,14 @@ watchlists:                            # 主题标的池(个股 + ETF 混合)
   机器人:   [CN:159819, CN:300024]
   AI:       [US:QQQ, CN:159819]
   智能制造: [CN:516960]
+  # 美股七姐妹 + 纳指（SpaceX 未上市、无代码，不含）
+  美股科技: [US:AAPL, US:MSFT, US:GOOGL, US:AMZN, US:META, US:NVDA, US:TSLA, US:^IXIC]
+  # 科技/AI 主题 ETF
+  科技AI_ETF: [US:QQQ, US:XLK, US:SMH, US:SOXX, US:ARKK, US:BOTZ, US:AIQ, US:IGV]
+  # 主流加密前十(参考币安市值, 排除稳定币; kraken 现货)
+  加密主流: [CRYPTO:BTC/USDT, CRYPTO:ETH/USDT, CRYPTO:BNB/USDT, CRYPTO:SOL/USDT,
+            CRYPTO:XRP/USDT, CRYPTO:DOGE/USDT, CRYPTO:ADA/USDT, CRYPTO:TRX/USD,
+            CRYPTO:AVAX/USDT, CRYPTO:LINK/USDT]
 
 sizing:
   method: fixed_tier                   # fixed_tier | kelly_conservative

@@ -28,7 +28,8 @@ class CcxtSource(DataSource):
         except ImportError as e:
             raise SourceUnavailable("ccxt 未安装：pip install -e '.[crypto]'") from e
         try:
-            return getattr(ccxt, self.exchange)()
+            # enableRateLimit：ccxt 自动在请求间隔休眠，避免并发批量取数被交易所限流。
+            return getattr(ccxt, self.exchange)({"enableRateLimit": True})
         except AttributeError as e:
             raise SourceUnavailable(f"ccxt 无交易所 {self.exchange}") from e
 

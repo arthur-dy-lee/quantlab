@@ -63,31 +63,46 @@ def download(
 
 @app.command(name="download-all")
 def download_all(
-    market: str = typer.Option("CN", help="目前仅支持 CN 全市场"),
-    workers: int = typer.Option(8, help="并发数（过高易被源限流）"),
-    include_etf: bool = typer.Option(False, help="附带 ETF"),
+    market: str = typer.Option("CN", help="CN 全市场 | US 核心科技+ETF | CRYPTO 主流前十"),
+    workers: int = typer.Option(0, help="并发数（0=按市场自动；过高易被源限流）"),
+    include_etf: bool = typer.Option(False, help="仅 CN：附带 ETF"),
     limit: int = typer.Option(0, help="只下前 N 个（0=全部，用于试跑/测速）"),
     missing_only: bool = typer.Option(False, help="只补本地尚无缓存的标的（用于失败补漏）"),
 ):
-    """一次拉取全市场日线到本地（并发 + 断点续传 + 进度日志）。"""
+    """批量拉取某市场日线到本地（并发 + 断点续传 + 进度日志）。
+
+    CN=沪深京全量；US=七姐妹+纳指+科技/AI ETF；CRYPTO=主流前十（参考币安市值）。
+    """
     from quantlab.enums import Freq
     from quantlab.symbols import Symbol
-    from quantlab.universe import download_universe, list_cn_symbols
+    from quantlab.universe import (
+        download_universe, list_cn_symbols, list_crypto_symbols, list_us_symbols,
+    )
 
-    if market.upper() != "CN":
-        raise typer.BadParameter("目前仅支持 CN 全市场")
+    # 每市场：(清单构造, 默认并发)。源越脆弱并发给得越低（kraken 最严，故 3）。
+    builders = {
+        "CN": (lambda: list_cn_symbols(include_etf=include_etf), 8),
+        "US": (list_us_symbols, 6),
+        "CRYPTO": (list_crypto_symbols, 3),
+    }
+    m = market.upper()
+    if m not in builders:
+        raise typer.BadParameter("market 仅支持 CN | US | CRYPTO")
+    build_syms, default_workers = builders[m]
+    workers = workers or default_workers
+
     dm = build_app()
     _setup_run_log(dm.cfg.data_root)
-    syms = list_cn_symbols(include_etf=include_etf)
+    syms = build_syms()
     if limit:
         syms = syms[:limit]
     if missing_only:
         syms = [s for s in syms if dm.repo.meta(Symbol.parse(s), Freq.DAY) is None]
-    typer.echo(f"待下载 {len(syms)} 个标的，并发 {workers}（日志见 {dm.cfg.data_root}watch.log）…")
-    res = download_universe(dm, syms, workers=workers)
+    typer.echo(f"[{m}] 待下载 {len(syms)} 个标的，并发 {workers}（日志见 {dm.cfg.data_root}watch.log）…")
+    res = download_universe(dm, syms, workers=workers, progress_every=200 if m == "CN" else 5)
     typer.echo(f"完成: ok={res['ok']} fail={res['fail']} / {res['total']}")
-    if res["failed"][:10]:
-        typer.echo(f"失败示例: {res['failed'][:10]}")
+    if res["failed"]:
+        typer.echo(f"失败: {res['failed'][:20]}")
 
 
 @app.command()

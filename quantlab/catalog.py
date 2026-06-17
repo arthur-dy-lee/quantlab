@@ -19,6 +19,26 @@ KNOWN_INDEX = {
     "CN:sh000016": "上证50", "CN:sh000905": "中证500", "CN:sh000688": "科创50",
 }
 
+# 美股 curated 中文名（含常用别名，便于看板按中文/简称搜索；与 universe 清单对应）
+KNOWN_NAMES_US = {
+    "US:^IXIC": "纳斯达克综合指数(纳指)", "US:^NDX": "纳斯达克100指数(纳指100)",
+    "US:AAPL": "苹果", "US:MSFT": "微软", "US:GOOGL": "谷歌Alphabet",
+    "US:AMZN": "亚马逊", "US:META": "Meta(脸书)", "US:NVDA": "英伟达", "US:TSLA": "特斯拉",
+    "US:QQQ": "纳指100ETF", "US:XLK": "美股科技板块ETF",
+    "US:SMH": "半导体ETF(VanEck)", "US:SOXX": "半导体ETF(iShares)",
+    "US:ARKK": "ARK创新ETF", "US:BOTZ": "机器人与AI ETF",
+    "US:AIQ": "人工智能与科技ETF", "US:IGV": "软件ETF",
+}
+
+# 主流加密 curated 中文名（含别名/英文，便于搜索）
+KNOWN_NAMES_CRYPTO = {
+    "CRYPTO:BTC/USDT": "比特币BTC", "CRYPTO:ETH/USDT": "以太坊ETH",
+    "CRYPTO:BNB/USDT": "币安币BNB", "CRYPTO:SOL/USDT": "Solana索拉纳SOL",
+    "CRYPTO:XRP/USDT": "瑞波币XRP", "CRYPTO:DOGE/USDT": "狗狗币DOGE",
+    "CRYPTO:ADA/USDT": "艾达币Cardano", "CRYPTO:TRX/USD": "波场TRON",
+    "CRYPTO:AVAX/USDT": "Avalanche雪崩AVAX", "CRYPTO:LINK/USDT": "Chainlink预言机LINK",
+}
+
 
 def _names_path(root: str) -> Path:
     return Path(root) / "names.parquet"
@@ -52,8 +72,10 @@ def build_names(dm) -> dict[str, str]:
         pass
 
     names.update(KNOWN_INDEX)            # 常用指数名
+    names.update(KNOWN_NAMES_US)         # 美股 curated 中文名
+    names.update(KNOWN_NAMES_CRYPTO)     # 加密 curated 中文名
 
-    for m in dm.catalog():               # 本地已缓存的（含 US/加密）补全
+    for m in dm.catalog():               # 本地已缓存的补全（无 curated 名则退化为代码）
         names.setdefault(m.symbol, m.symbol.split(":", 1)[1])
 
     df = pd.DataFrame({"symbol": list(names), "name": list(names.values())})

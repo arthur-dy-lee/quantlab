@@ -33,6 +33,34 @@ def list_cn_symbols(include_etf: bool = False) -> list[str]:
     return [s for s in syms if not (s in seen or seen.add(s))]
 
 
+# ── 美股核心清单（curated）─────────────────────────────────────────────
+# 七姐妹(Magnificent Seven)：苹果/微软/谷歌/亚马逊/Meta/英伟达/特斯拉
+US_MEGACAP_TECH = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA"]
+# 纳指：纳斯达克综合 / 纳斯达克100（指数用 ^ 前缀，yfinance 原生）
+US_INDEXES = ["^IXIC", "^NDX"]
+# 科技/AI 主题 ETF：纳指100 / 科技板块 / 半导体×2 / 创新 / 机器人&AI / AI主题 / 软件
+US_TECH_AI_ETFS = ["QQQ", "XLK", "SMH", "SOXX", "ARKK", "BOTZ", "AIQ", "IGV"]
+# 注：SpaceX 为未上市私有公司、无公开股票代码，无法取数，故不在清单内。
+
+
+def list_us_symbols() -> list[str]:
+    """美股核心：七姐妹 + 纳指 + 科技/AI ETF（curated；不含未上市的 SpaceX）。"""
+    return [f"US:{c}" for c in US_MEGACAP_TECH + US_INDEXES + US_TECH_AI_ETFS]
+
+
+# ── 加密主流前十（参考币安市值排序、排除稳定币）──────────────────────────
+# kraken 现货对：多数有 USDT；TRX 仅有 USD 对，故单列。
+CRYPTO_TOP10 = [
+    "BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "XRP/USDT",
+    "DOGE/USDT", "ADA/USDT", "TRX/USD", "AVAX/USDT", "LINK/USDT",
+]
+
+
+def list_crypto_symbols() -> list[str]:
+    """主流加密前十（频率由调用方指定，本项目默认仅拉日线）。"""
+    return [f"CRYPTO:{c}" for c in CRYPTO_TOP10]
+
+
 def download_universe(
     dm,
     symbols: list[str],
