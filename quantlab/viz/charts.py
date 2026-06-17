@@ -21,6 +21,23 @@ def _go():
     return go
 
 
+def style_timeseries(fig):
+    """统一的时间序列交互（同花顺/看盘网站手感）：拖拽平移 + 十字光标。
+
+    看板内嵌图与"下载的可交互 HTML"都会带上这套手感。缩放走滚轮/快捷键（在看板里挂）。
+    """
+    fig.update_layout(
+        dragmode="pan",            # 左键拖拽 = 平移时间轴（默认是框选缩放）
+        hovermode="x unified",     # 鼠标移动 → 该时刻各线价格汇总到一个浮窗
+        xaxis=dict(                # 竖直十字光标线，贯穿整图
+            showspikes=True, spikemode="across", spikesnap="cursor",
+            spikethickness=1, spikedash="dot", spikecolor="#888",
+        ),
+        yaxis=dict(showspikes=True, spikethickness=1, spikedash="dot", spikecolor="#888"),
+    )
+    return fig
+
+
 def plot_candles(df: pd.DataFrame, indicators: list[str] | None = None, title: str = "K线 + 指标"):
     go = _go()
     fig = go.Figure(
@@ -32,8 +49,8 @@ def plot_candles(df: pd.DataFrame, indicators: list[str] | None = None, title: s
     for col in indicators or []:
         if col in df.columns:
             fig.add_trace(go.Scatter(x=df.index, y=df[col], mode="lines", name=col))
-    fig.update_layout(title=title, xaxis_rangeslider_visible=False, hovermode="x unified")
-    return fig
+    fig.update_layout(title=title, xaxis_rangeslider_visible=False)
+    return style_timeseries(fig)
 
 
 def plot_volume(df: pd.DataFrame):
@@ -41,7 +58,7 @@ def plot_volume(df: pd.DataFrame):
     colors = [UP_COLOR if c >= o else DOWN_COLOR for c, o in zip(df[CLOSE], df[OPEN])]
     fig = go.Figure(go.Bar(x=df.index, y=df[VOLUME], name="成交量", marker_color=colors))
     fig.update_layout(title="成交量")
-    return fig
+    return style_timeseries(fig)
 
 
 def plot_equity(result):
@@ -49,8 +66,8 @@ def plot_equity(result):
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=result.equity_curve.index, y=result.equity_curve, name="策略净值"))
     fig.add_trace(go.Scatter(x=result.buy_hold.index, y=result.buy_hold, name="买入持有"))
-    fig.update_layout(title="净值对照（起点=1）", hovermode="x unified")
-    return fig
+    fig.update_layout(title="净值对照（起点=1）")
+    return style_timeseries(fig)
 
 
 def plot_drawdown(result):
@@ -60,7 +77,7 @@ def plot_drawdown(result):
     fig = go.Figure(go.Scatter(x=dd.index, y=dd, fill="tozeroy", name="回撤",
                                line_color="#d62728"))
     fig.update_layout(title="回撤", yaxis_tickformat=".0%")
-    return fig
+    return style_timeseries(fig)
 
 
 def plot_probability(result):
@@ -96,5 +113,5 @@ def plot_compare(series_map: dict[str, pd.Series]):
         s = s.dropna()
         if len(s):
             fig.add_trace(go.Scatter(x=s.index, y=s / s.iloc[0], mode="lines", name=name))
-    fig.update_layout(title="归一化走势对比（起点=1）", hovermode="x unified")
-    return fig
+    fig.update_layout(title="归一化走势对比（起点=1）")
+    return style_timeseries(fig)

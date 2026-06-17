@@ -1,6 +1,7 @@
 """QuantLab 本地中文看板（详细设计 §10.3）。
 
 运行：``streamlit run quantlab/dashboard/app.py``（需 ``pip install -e '.[dashboard]'``）。
+端口固定为 8110（见 ``.streamlit/config.toml``），访问 http://localhost:8110 。
 功能：按名称/代码搜索、收藏、主题池、K线/成交量/回测/条件概率/多标的对比、图表下载。
 普通 import 不触发 streamlit（仅 streamlit run 时执行 main）。
 """
@@ -34,35 +35,59 @@ def main() -> None:  # noqa: C901 —— 看板线性脚本
 
     import streamlit.components.v1 as components
 
-    _CFG = {"scrollZoom": True, "displaylogo": False}  # 滚轮缩放 + 去 logo
+    # 滚轮缩放 + 去 logo；双击复位到全量区间
+    _CFG = {"scrollZoom": True, "displaylogo": False, "doubleClick": "reset"}
 
     def _chart(fig):
         st.plotly_chart(fig, use_container_width=True, config=_CFG)
 
-    # 时间序列图：滚轮只缩 X 轴，Y 随可见区间自适应（plotly relayout JS 回调）
-    _YJS = """
+    # 时间序列交互（看盘网站/同花顺手感）：
+    #  · 拖拽=平移时间轴（dragmode 在 charts.style_timeseries 里设 pan）
+    #  · 滚轮 / Cmd(Ctrl) +、- = 缩放；Cmd(Ctrl)+0 复位；← → = 平移（需先点一下图聚焦）
+    #  · X 区间一变，Y 轴按可见区间自适应（同花顺看一段就贴合一段）
+    _INTERACT_JS = """
     var gd=document.getElementById('{plot_id}');
-    function _ry(){
-      var xa=gd._fullLayout&&gd._fullLayout.xaxis; if(!xa||!xa.range) return;
-      var x0=new Date(xa.range[0]).getTime(), x1=new Date(xa.range[1]).getTime();
-      var lo=Infinity, hi=-Infinity;
-      (gd.data||[]).forEach(function(t){
-        var xs=t.x; if(!xs) return;
+    function _xr(){
+      var xa=gd._fullLayout&&gd._fullLayout.xaxis;
+      if(xa&&xa.range&&xa.range.length===2)
+        return [new Date(xa.range[0]).getTime(), new Date(xa.range[1]).getTime()];
+      var lo=Infinity,hi=-Infinity;
+      (gd.data||[]).forEach(function(t){var xs=t.x; if(!xs||!xs.length) return;
+        var a=new Date(xs[0]).getTime(), b=new Date(xs[xs.length-1]).getTime();
+        if(a<lo)lo=a; if(b>hi)hi=b;});
+      return [lo,hi];
+    }
+    function _fitY(){
+      var r=_xr(), x0=r[0], x1=r[1], lo=Infinity, hi=-Infinity;
+      (gd.data||[]).forEach(function(t){var xs=t.x; if(!xs) return;
         for(var i=0;i<xs.length;i++){
           var v=new Date(xs[i]).getTime(); if(v<x0||v>x1) continue;
           if(t.type==='candlestick'){ if(t.low[i]<lo)lo=t.low[i]; if(t.high[i]>hi)hi=t.high[i]; }
           else if(t.y){ var y=t.y[i]; if(y<lo)lo=y; if(y>hi)hi=y; }
-        }
-      });
+        }});
       if(lo<hi){ var p=(hi-lo)*0.06; Plotly.relayout(gd,{'yaxis.range':[lo-p,hi+p]}); }
     }
-    gd.on('plotly_relayout', function(e){ if(('xaxis.range[0]' in e)||e['xaxis.autorange']) setTimeout(_ry,30); });
+    function _zoom(f){ var r=_xr(), c=(r[0]+r[1])/2, h=(r[1]-r[0])/2*f;
+      Plotly.relayout(gd,{'xaxis.range':[c-h,c+h]}).then(_fitY); }
+    function _pan(fr){ var r=_xr(), w=(r[1]-r[0])*fr;
+      Plotly.relayout(gd,{'xaxis.range':[r[0]+w,r[1]+w]}).then(_fitY); }
+    gd.on('plotly_relayout', function(e){ if(('xaxis.range[0]' in e)||e['xaxis.autorange']) setTimeout(_fitY,30); });
+    gd.setAttribute('tabindex','0'); gd.style.outline='none';
+    gd.addEventListener('keydown', function(ev){
+      var m=ev.ctrlKey||ev.metaKey;
+      if(m&&(ev.key==='='||ev.key==='+')){ ev.preventDefault(); _zoom(0.8); }
+      else if(m&&(ev.key==='-'||ev.key==='_')){ ev.preventDefault(); _zoom(1.25); }
+      else if(m&&ev.key==='0'){ ev.preventDefault(); Plotly.relayout(gd,{'xaxis.autorange':true,'yaxis.autorange':true}); }
+      else if(ev.key==='ArrowLeft'){ ev.preventDefault(); _pan(-0.15); }
+      else if(ev.key==='ArrowRight'){ ev.preventDefault(); _pan(0.15); }
+    });
     """
 
     def render_xzoom(fig, height=520):
         # 图自身高度跟 iframe 一致，否则默认 450px 会被矮 iframe 截掉底部 X 轴
         fig.update_layout(height=height, margin=dict(l=40, r=20, t=40, b=44))
-        html = fig.to_html(include_plotlyjs="cdn", full_html=True, config=_CFG, post_script=_YJS)
+        html = fig.to_html(include_plotlyjs="cdn", full_html=True, config=_CFG,
+                           post_script=_INTERACT_JS)
         components.html(html, height=height, scrolling=False)
 
     dm = build_app()
@@ -131,8 +156,8 @@ def main() -> None:  # noqa: C901 —— 看板线性脚本
     st.subheader(f"{label(symbol)}　`{symbol}`")
 
     def dl(fig, name: str, key: str) -> None:
-        st.download_button("⬇ 下载图表(HTML，可交互)", fig.to_html(), file_name=f"{name}.html",
-                           mime="text/html", key=key)
+        st.download_button("⬇ 下载图表(HTML，可交互)", fig.to_html(config=_CFG),
+                           file_name=f"{name}.html", mime="text/html", key=key)
 
     tab_q, tab_bt, tab_p, tab_cmp = st.tabs(["📈 行情", "🔬 回测", "🎲 条件概率", "📊 多标的对比"])
 
@@ -218,7 +243,11 @@ def main() -> None:  # noqa: C901 —— 看板线性脚本
                 render_xzoom(cfig, 480)
                 dl(cfig, "compare", "dl_cmp")
 
-    st.caption("💡 图表右上角 📷 可直接存 PNG；或用上方按钮下载可交互 HTML。仅供研究，非投资建议。")
+    st.caption(
+        "🖱️ 操作：**拖拽**左右移动看不同时段；**滚轮**或 **Cmd/Ctrl +、-** 缩放；"
+        "**Cmd/Ctrl+0**（或双击）复位；点一下图后可用 **← →** 平移。鼠标移动有十字光标读价。"
+        "　右上角 📷 存 PNG，上方按钮下载可交互 HTML。仅供研究，非投资建议。"
+    )
 
 
 if __name__ == "__main__":
