@@ -22,22 +22,29 @@ import pandas as pd
 from quantlab.datasources import valuation_source as vs
 from quantlab.datasources.macro_source import historical_percentile
 
-DIRECTION = {"pe": "high", "pb": "high", "erp": "low", "sentiment": "high"}
+# securitization=证券化率(总市值/GDP,巴菲特指标)，高=贵；实测对沪深300前向 IC 最强(−0.52)。
+DIRECTION = {"pe": "high", "pb": "high", "erp": "low", "sentiment": "high",
+             "securitization": "high"}
 
-# v1 默认权重（已按 5→4 指标重归一化；见详细设计 §1）。config.yaml 可覆盖。
+# v1.1 默认权重（5 因子；加入证券化率、回收两融的过度权重）。config.yaml 可覆盖。
+# 顶部=过热(抓泡沫)：证券化率+两融+ERP 主导；底部=恐慌(抓机会)：ERP+PB+证券化率 主导。
 DEFAULT_WEIGHTS = {
-    ("CN", "top"):    {"pe": 0.24, "erp": 0.23, "pb": 0.06, "sentiment": 0.47},
-    ("CN", "bottom"): {"pe": 0.19, "erp": 0.36, "pb": 0.33, "sentiment": 0.12},
+    ("CN", "top"):    {"securitization": 0.25, "sentiment": 0.25, "erp": 0.20, "pe": 0.15, "pb": 0.15},
+    ("CN", "bottom"): {"securitization": 0.22, "erp": 0.30, "pb": 0.28, "pe": 0.10, "sentiment": 0.10},
 }
 
 
 def _raw_indicators(data_root: str, refresh: bool) -> dict[str, pd.Series]:
-    """4 个原始指标序列。sentiment v1 = 两融占比（换手率延后 v1.1）。"""
+    """5 个原始指标序列。sentiment=两融占比；securitization=证券化率(巴菲特指标)。"""
+    from quantlab.datasources.macro_source import china_securitization
+    sec = china_securitization(data_root, refresh)["ratio"].sort_index()
+    sec = sec[~sec.index.duplicated(keep="last")].rename("securitization")
     return {
         "pe": vs.cn_market_pe(data_root, refresh),
         "pb": vs.cn_market_pb(data_root, refresh),
         "erp": vs.cn_erp(data_root, refresh),
         "sentiment": vs.cn_margin_ratio(data_root, refresh),
+        "securitization": sec,
     }
 
 

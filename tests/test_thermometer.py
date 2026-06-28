@@ -53,14 +53,15 @@ def _patch_raw(monkeypatch, raws):
 
 
 def test_compose_weighted_value(monkeypatch):
-    """常数序列 → 各指标分位=100；按已知方向/权重得可预测温度。"""
+    """常数序列 → 各指标分位=100；按已知方向/权重得可预测温度（5 因子）。"""
     n = 60
     const = _series([5.0] * n)
-    _patch_raw(monkeypatch, {"pe": const, "pb": const, "erp": const, "sentiment": const})
+    _patch_raw(monkeypatch, {k: const for k in
+                             ("pe", "pb", "erp", "sentiment", "securitization")})
     out = th.compute_temperature("CN", "top", config_path=None)
-    # pe/pb/sentiment direction=high → hot 100；erp direction=low → hot 0
-    # top = 0.24*100 + 0.06*100 + 0.47*100 + 0.23*0 = 77
-    assert abs(out["temperature"].iloc[-1] - 77.0) < 1e-6
+    # 高方向(sec/sent/pe/pb)→hot 100；erp(低方向)→hot 0
+    # top = (0.25+0.25+0.15+0.15)*100 + 0.20*0 = 80
+    assert abs(out["temperature"].iloc[-1] - 80.0) < 1e-6
 
 
 def test_missing_data_renormalizes(monkeypatch):
@@ -68,19 +69,21 @@ def test_missing_data_renormalizes(monkeypatch):
     n = 60
     const = _series([5.0] * n)
     short = _series([5.0] * 5, start="2020-02-25")    # 仅最后几天有 sentiment
-    _patch_raw(monkeypatch, {"pe": const, "pb": const, "erp": const, "sentiment": short})
+    _patch_raw(monkeypatch, {"pe": const, "pb": const, "erp": const,
+                             "securitization": const, "sentiment": short})
     out = th.compute_temperature("CN", "top", config_path=None)
     early = out["temperature"].iloc[0]
-    # 早期无 sentiment：wsum=0.24+0.23+0.06=0.53；temp=(24+0+6)/0.53≈56.6
+    # 早期无 sentiment：wsum=0.25(sec)+0.20(erp)+0.15(pe)+0.15(pb)=0.75
+    # temp=(25+0+15+15)/0.75
     assert not np.isnan(early)
-    assert abs(early - 30.0 / 0.53) < 1e-6
+    assert abs(early - 55.0 / 0.75) < 1e-6
 
 
 def test_net_temperature_sign(monkeypatch):
     """构造贵+拥挤的市场 → 顶部高、底部低、净为正。"""
     n = 80
-    rising = _series(range(n))             # 估值/杠杆单调走高
-    _patch_raw(monkeypatch, {"pe": rising, "pb": rising,
+    rising = _series(range(n))             # 估值/杠杆/证券化率单调走高
+    _patch_raw(monkeypatch, {"pe": rising, "pb": rising, "securitization": rising,
                              "erp": _series(range(n, 0, -1)),  # ERP 走低=越来越贵
                              "sentiment": rising})
     nt = th.net_temperature("CN", config_path=None)

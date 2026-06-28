@@ -27,9 +27,9 @@ thermometer:                           # 市场温度计 v1（A股）；见 rese
   cn:
     winsor: 0.01                        # 极值裁剪分位（扩张窗口，无未来函数）
     sentiment: { margin: 1.0, turnover: 0.0 }   # v1 情绪=两融占比；换手率延后 v1.1
-    weights:                            # 顶部=过热(抓泡沫) / 底部=恐慌(抓机会)
-      top:    { pe: 0.24, erp: 0.23, pb: 0.06, sentiment: 0.47 }
-      bottom: { pe: 0.19, erp: 0.36, pb: 0.33, sentiment: 0.12 }
+    weights:                            # 顶部=过热(抓泡沫) / 底部=恐慌(抓机会)；v1.1 加证券化率、回收两融
+      top:    { securitization: 0.25, sentiment: 0.25, erp: 0.20, pe: 0.15, pb: 0.15 }
+      bottom: { securitization: 0.22, erp: 0.30, pb: 0.28, pe: 0.10, sentiment: 0.10 }
     advisor:                            # 加减仓决策层：温度区间→目标仓位%(回测支撑)
       index_symbol: 沪深300              # 前向收益基准(可切换)：沪深300/中证全指/中证500/上证指数
       horizon: 60                       # 前向收益评估期(交易日)
