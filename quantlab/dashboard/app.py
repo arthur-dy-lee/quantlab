@@ -276,21 +276,28 @@ def main() -> None:  # noqa: C901 —— 看板线性脚本
         st.caption("市场温度计 ＝ 中位 PE/PB + ERP + 两融 合成的净温度；决策层把"
                    "「净温度档 × 拐点」所处区间的历史前向收益映射成**建议目标仓位%**。"
                    "诚实提示：**不跑赢买入持有**，价值在控回撤与纪律，最稳信号是抄极冷底。")
-        refresh = st.button("🔄 联网刷新温度与指数", key="th_refresh")
+        from quantlab.signals import allocator as al
+        cc = st.columns([3, 1])
+        idx_name = cc[0].selectbox("前向收益基准（按你实际持仓口径切）", list(al.INDEX_CHOICES),
+                                   index=0, key="th_index",
+                                   help="沪深300=大盘蓝筹可交易 / 中证全指=全市场最贴温度口径 / "
+                                        "中证500=中小盘 / 上证指数=仅情绪锚")
+        refresh = cc[1].button("🔄 联网刷新", key="th_refresh")
         try:
-            from quantlab.signals import allocator as al
             with st.spinner("读取/计算温度与区间前向收益…"):
-                adv = al.recommend_position("CN", refresh=refresh, data_root=dm.cfg.data_root)
-                eq, mt = al.backtest_allocation("CN", data_root=dm.cfg.data_root)
+                adv = al.recommend_position("CN", refresh=refresh, data_root=dm.cfg.data_root,
+                                            index_symbol=idx_name)
+                eq, mt = al.backtest_allocation("CN", data_root=dm.cfg.data_root,
+                                                index_symbol=idx_name)
             m = st.columns(4)
             m[0].metric("净温度", f"{adv.net:+.0f}",
                         help=f"顶部 {adv.top:.0f} / 底部 {adv.bottom:.0f}　截至 {adv.date.date()}")
             m[1].metric("所处区间", adv.regime, help=f"近20日 {adv.momentum:+.1f} → {adv.turning}")
-            m[2].metric("建议目标仓位", f"{adv.target:.0f}%", help="现仓高于则减、低于则加")
+            m[2].metric(f"建议仓位·{adv.index}", f"{adv.target:.0f}%", help="现仓高于则减、低于则加")
             m[3].metric(f"同区间未来{adv.horizon}日胜率", f"{adv.win_rate:.0%}",
                         help=f"n={adv.n}　均值 {adv.mean_fwd:+.1%}　置信度 {adv.confidence}")
             st.info(f"▶ {adv.verdict}")
-            st.caption(f"走查回测(沪深300 因果)：温度择仓 CAGR {mt['strat_cagr']:.1%} / "
+            st.caption(f"走查回测({adv.index} 因果)：温度择仓 CAGR {mt['strat_cagr']:.1%} / "
                        f"回撤 {mt['strat_maxdd']:.0%} / 夏普 {mt['strat_sharpe']:.2f}　vs　"
                        f"买入持有 CAGR {mt['bh_cagr']:.1%} / 回撤 {mt['bh_maxdd']:.0%} / "
                        f"夏普 {mt['bh_sharpe']:.2f}")

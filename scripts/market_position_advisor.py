@@ -26,7 +26,7 @@ plt.rcParams["axes.unicode_minus"] = False
 
 def _report(adv: al.PositionAdvice) -> None:
     print("=" * 66)
-    print(f"  A股加减仓顾问 · 截至 {adv.date.date()}")
+    print(f"  A股加减仓顾问 · 截至 {adv.date.date()} · 基准 {adv.index}")
     print("=" * 66)
     print(f"  净温度 {adv.net:+.0f}  (顶部 {adv.top:.0f} / 底部 {adv.bottom:.0f})"
           f"   近 20 日 {adv.momentum:+.1f} → {adv.turning}")
@@ -73,11 +73,11 @@ def _backtest_plot(eq, metrics: dict, out: Path) -> None:
     print(f"saved -> {out}  ({eq.index[0].date()} ~ {eq.index[-1].date()}, n={len(eq)})")
 
 
-def main(refresh: bool, horizon: int) -> None:
-    adv = al.recommend_position("CN", horizon=horizon, refresh=refresh)
+def main(refresh: bool, horizon: int, index: str | None) -> None:
+    adv = al.recommend_position("CN", horizon=horizon, refresh=refresh, index_symbol=index)
     _report(adv)
 
-    eq, metrics = al.backtest_allocation("CN", refresh=False)
+    eq, metrics = al.backtest_allocation("CN", refresh=False, index_symbol=index)
     print(f"\n  走查回测 {eq.index[0].date()}~{eq.index[-1].date()}："
           f"策略 CAGR {metrics['strat_cagr']:.1%} / 回撤 {metrics['strat_maxdd']:.0%}"
           f"  vs  买入持有 CAGR {metrics['bh_cagr']:.1%} / 回撤 {metrics['bh_maxdd']:.0%}")
@@ -88,4 +88,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--refresh", action="store_true", help="联网刷新温度与指数数据")
     ap.add_argument("--horizon", type=int, default=60, help="前向收益评估期(交易日)")
-    main(ap.parse_args().refresh, ap.parse_args().horizon)
+    ap.add_argument("--index", default=None,
+                    help="前向收益基准：沪深300/中证全指/中证500/上证指数 或裸码；缺省读 config")
+    args = ap.parse_args()
+    main(args.refresh, args.horizon, args.index)

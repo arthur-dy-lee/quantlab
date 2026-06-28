@@ -49,11 +49,21 @@ DEFAULT_PARAMS: dict[str, float] = {
 }
 DEFAULT_INDEX = "000300"   # 沪深300（2005 起全历史 + 最可交易；中证全指仅 2011 起）
 
+# 可切换的前向收益基准（友好名 → 东财裸 6 位码）。温度本身与指数无关，仅换"收益标尺"。
+INDEX_CHOICES: dict[str, str] = {
+    "沪深300": "000300",   # 默认：可交易(300ETF/IF)、2005 起含 2008、与 ERP 同口径
+    "中证全指": "000985",   # 最贴合全市场中位温度口径(区分度最高)；2011 起、缺 2008
+    "中证500": "000905",   # 中小盘视角
+    "上证指数": "000001",   # =上证综指(通达信码 1A0001)；编制偏沪市，仅作情绪锚
+}
+INDEX_NAMES: dict[str, str] = {v: k for k, v in INDEX_CHOICES.items()}
+
 
 @dataclass
 class PositionAdvice:
     """当下的加减仓建议 + 历史同区间前向收益证据。"""
     date: pd.Timestamp
+    index: str             # 前向收益基准（友好名，如"沪深300"）
     net: float
     top: float
     bottom: float
@@ -89,6 +99,24 @@ def _params(config_path: str | None) -> dict[str, float]:
         except Exception:  # noqa: BLE001 —— 配置坏了回退默认，不阻断
             pass
     return p
+
+
+def _index_symbol(config_path: str | None, override: str | None) -> str:
+    """解析前向收益基准代码：显式入参 > config.yaml advisor.index_symbol > 默认沪深300。
+
+    入参/配置可写友好名（"中证全指"）或裸码（"000985"），统一归一到裸码。
+    """
+    raw = override
+    if raw is None and config_path and Path(config_path).exists():
+        try:
+            import yaml
+            cfg = yaml.safe_load(Path(config_path).read_text(encoding="utf-8")) or {}
+            raw = cfg.get("thermometer", {}).get("cn", {}).get("advisor", {}).get("index_symbol")
+        except Exception:  # noqa: BLE001
+            raw = None
+    if raw is None:
+        return DEFAULT_INDEX
+    return INDEX_CHOICES.get(str(raw), str(raw))
 
 
 # ── 区间标注与打分 ────────────────────────────────────────────────────────
@@ -181,13 +209,17 @@ def _verdict(target: float, turning: str) -> str:
 
 def recommend_position(market: str = "CN", horizon: int | None = None, refresh: bool = False,
                        data_root: str = "data/", config_path: str | None = "config.yaml",
-                       index_symbol: str = DEFAULT_INDEX) -> PositionAdvice:
-    """当下加减仓建议：当前区间 → 目标仓位% + 同区间历史前向收益证据（全样本口径）。"""
+                       index_symbol: str | None = None) -> PositionAdvice:
+    """当下加减仓建议：当前区间 → 目标仓位% + 同区间历史前向收益证据（全样本口径）。
+
+    ``index_symbol`` 可传友好名("中证全指")或裸码("000985")；None 时读 config / 回退沪深300。
+    """
     p = _params(config_path)
     if horizon is not None:
         p["horizon"] = float(horizon)
+    sym = _index_symbol(config_path, index_symbol)
     nt = th.net_temperature(market, refresh, data_root, config_path)
-    price = vs.cn_index_ohlc(index_symbol, data_root, refresh)
+    price = vs.cn_index_ohlc(sym, data_root, refresh)
     lab = _labels(nt["net"], p["mom_window"])
     table = regime_table(nt["net"], price, p)
 
@@ -208,7 +240,8 @@ def recommend_position(market: str = "CN", horizon: int | None = None, refresh: 
         mean_fwd = median_fwd = win = ci_low = ci_high = mae_mean = float("nan")
 
     return PositionAdvice(
-        date=nt.index[-1], net=float(last["net"]), top=float(last["top"]),
+        date=nt.index[-1], index=INDEX_NAMES.get(sym, sym),
+        net=float(last["net"]), top=float(last["top"]),
         bottom=float(last["bottom"]), momentum=mom, turning=turning, band=band, regime=cell,
         target=target, verdict=_verdict(target, turning),
         confidence=_confidence(n, ci_low, ci_high), horizon=int(p["horizon"]), n=n,
@@ -280,15 +313,16 @@ def _perf(strat: pd.Series, mkt: pd.Series, pos: pd.Series) -> dict[str, float]:
 
 def backtest_allocation(market: str = "CN", refresh: bool = False, data_root: str = "data/",
                         config_path: str | None = "config.yaml",
-                        index_symbol: str = DEFAULT_INDEX) -> tuple[pd.DataFrame, dict[str, float]]:
+                        index_symbol: str | None = None) -> tuple[pd.DataFrame, dict[str, float]]:
     """走查回测：因果地把区间仓位规则铺到历史，对照买入持有。
 
     返回 (净值表[strategy/buy_hold/position], 绩效 dict)。信号次日生效，自首个有效仓位起算。
-    诚实提示：本规则不跑赢买入持有，价值在控回撤；解读见模块 docstring。
+    ``index_symbol`` 同 ``recommend_position``。诚实提示：本规则不跑赢买入持有，价值在控回撤。
     """
     p = _params(config_path)
+    sym = _index_symbol(config_path, index_symbol)
     nt = th.net_temperature(market, refresh, data_root, config_path)
-    price = vs.cn_index_ohlc(index_symbol, data_root, refresh)
+    price = vs.cn_index_ohlc(sym, data_root, refresh)
 
     pos = causal_positions(nt["net"], price, p)
     pos = shift_next_day(pos)                          # 信号次日生效（防未来函数）
