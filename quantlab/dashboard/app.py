@@ -24,8 +24,9 @@ def main() -> None:  # noqa: C901 —— 看板线性脚本
     from quantlab.stats.probability import probability
     from quantlab.stats.sizing import build_sizer
     from quantlab.viz.charts import (
-        plot_candles, plot_compare, plot_drawdown, plot_equity,
-        plot_probability, plot_return_hist, plot_volume,
+        plot_allocation_backtest, plot_candles, plot_compare, plot_drawdown,
+        plot_equity, plot_probability, plot_return_hist, plot_securitization,
+        plot_volume,
     )
 
     st.set_page_config(page_title="QuantLab 量化看板", page_icon="📊", layout="wide")
@@ -159,7 +160,8 @@ def main() -> None:  # noqa: C901 —— 看板线性脚本
         st.download_button("⬇ 下载图表(HTML，可交互)", fig.to_html(config=_CFG),
                            file_name=f"{name}.html", mime="text/html", key=key)
 
-    tab_q, tab_bt, tab_p, tab_cmp = st.tabs(["📈 行情", "🔬 回测", "🎲 条件概率", "📊 多标的对比"])
+    tab_q, tab_bt, tab_p, tab_cmp, tab_sec, tab_th = st.tabs(
+        ["📈 行情", "🔬 回测", "🎲 条件概率", "📊 多标的对比", "📈 证券化率", "🌡️ 温度计·加减仓"])
 
     # ===== 行情 =====
     with tab_q:
@@ -242,6 +244,61 @@ def main() -> None:  # noqa: C901 —— 看板线性脚本
                 cfig = plot_compare(sm)
                 render_xzoom(cfig, 480)
                 dl(cfig, "compare", "dl_cmp")
+
+    # ===== 证券化率 / 巴菲特指标（与所选标的无关，全局宏观）=====
+    with tab_sec:
+        st.caption("证券化率 ＝ 股市总市值 ÷ GDP（巴菲特指标）。"
+                   "中国每日(akshare)、美国季度(FRED)；首次或刷新时联网。")
+        refresh = st.button("🔄 联网刷新宏观数据", key="sec_refresh")
+        try:
+            from quantlab.datasources.macro_source import (
+                china_securitization, historical_percentile, us_securitization,
+            )
+            with st.spinner("读取/计算证券化率…"):
+                cn = china_securitization(dm.cfg.data_root, refresh=refresh)
+                us = us_securitization(dm.cfg.data_root, refresh=refresh)
+                cn_pct = historical_percentile(cn["ratio"])
+            cn_last, us_last = cn.iloc[-1], us.iloc[-1]
+            m = st.columns(4)
+            m[0].metric("中国证券化率", f"{cn_last['ratio']:.1f}%",
+                        help=f"截至 {cn.index[-1].date()}　总市值 {cn_last['mktcap_yi'] / 1e4:.1f} 万亿元")
+            m[1].metric("中国历史分位", f"{cn_pct.iloc[-1]:.0f}%", help="在自身历史中的位置，越高越贵")
+            m[2].metric("美国证券化率", f"{us_last['ratio']:.0f}%", help=f"截至 {us.index[-1].date()}")
+            m[3].metric("美 ÷ 中 倍数", f"{us_last['ratio'] / cn_last['ratio']:.1f}×")
+            secfig = plot_securitization(cn["ratio"], us["ratio"], cn_pct)
+            render_xzoom(secfig, 520)
+            dl(secfig, "securitization", "dl_sec")
+        except Exception as e:  # noqa: BLE001
+            st.error(f"宏观数据获取失败（首次需联网）：{e}")
+
+    # ===== 市场温度计 / 加减仓（全局宏观，与所选标的无关）=====
+    with tab_th:
+        st.caption("市场温度计 ＝ 中位 PE/PB + ERP + 两融 合成的净温度；决策层把"
+                   "「净温度档 × 拐点」所处区间的历史前向收益映射成**建议目标仓位%**。"
+                   "诚实提示：**不跑赢买入持有**，价值在控回撤与纪律，最稳信号是抄极冷底。")
+        refresh = st.button("🔄 联网刷新温度与指数", key="th_refresh")
+        try:
+            from quantlab.signals import allocator as al
+            with st.spinner("读取/计算温度与区间前向收益…"):
+                adv = al.recommend_position("CN", refresh=refresh, data_root=dm.cfg.data_root)
+                eq, mt = al.backtest_allocation("CN", data_root=dm.cfg.data_root)
+            m = st.columns(4)
+            m[0].metric("净温度", f"{adv.net:+.0f}",
+                        help=f"顶部 {adv.top:.0f} / 底部 {adv.bottom:.0f}　截至 {adv.date.date()}")
+            m[1].metric("所处区间", adv.regime, help=f"近20日 {adv.momentum:+.1f} → {adv.turning}")
+            m[2].metric("建议目标仓位", f"{adv.target:.0f}%", help="现仓高于则减、低于则加")
+            m[3].metric(f"同区间未来{adv.horizon}日胜率", f"{adv.win_rate:.0%}",
+                        help=f"n={adv.n}　均值 {adv.mean_fwd:+.1%}　置信度 {adv.confidence}")
+            st.info(f"▶ {adv.verdict}")
+            st.caption(f"走查回测(沪深300 因果)：温度择仓 CAGR {mt['strat_cagr']:.1%} / "
+                       f"回撤 {mt['strat_maxdd']:.0%} / 夏普 {mt['strat_sharpe']:.2f}　vs　"
+                       f"买入持有 CAGR {mt['bh_cagr']:.1%} / 回撤 {mt['bh_maxdd']:.0%} / "
+                       f"夏普 {mt['bh_sharpe']:.2f}")
+            thfig = plot_allocation_backtest(eq)
+            render_xzoom(thfig, 520)
+            dl(thfig, "thermometer_allocation", "dl_th")
+        except Exception as e:  # noqa: BLE001
+            st.error(f"温度计数据获取失败（首次需联网取指数价格）：{e}")
 
     st.caption(
         "🖱️ 操作：**拖拽**左右移动看不同时段；**滚轮**或 **Cmd/Ctrl +、-** 缩放；"

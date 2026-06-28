@@ -23,6 +23,22 @@ watchlists:                            # 主题标的池(个股 + ETF 混合)
             CRYPTO:XRP/USDT, CRYPTO:DOGE/USDT, CRYPTO:ADA/USDT, CRYPTO:TRX/USD,
             CRYPTO:AVAX/USDT, CRYPTO:LINK/USDT]
 
+thermometer:                           # 市场温度计 v1（A股）；见 research/市场温度计_v1详细设计.md
+  cn:
+    winsor: 0.01                        # 极值裁剪分位（扩张窗口，无未来函数）
+    sentiment: { margin: 1.0, turnover: 0.0 }   # v1 情绪=两融占比；换手率延后 v1.1
+    weights:                            # 顶部=过热(抓泡沫) / 底部=恐慌(抓机会)
+      top:    { pe: 0.24, erp: 0.23, pb: 0.06, sentiment: 0.47 }
+      bottom: { pe: 0.19, erp: 0.36, pb: 0.33, sentiment: 0.12 }
+    advisor:                            # 加减仓决策层：温度区间→目标仓位%(回测支撑)
+      horizon: 60                       # 前向收益评估期(交易日)
+      mom_window: 20                    # 温度动量窗口(交易日)——区分升温/降温(拐点)
+      tail_k: 1.2                       # 尾部惩罚：score=均值+tail_k×第10分位(罚下尾)
+      floor: 15                         # 仓位下限 %（最差区间也留底仓）
+      cap: 100                          # 仓位上限 %
+      min_samples: 40                   # 区间样本下限；不足回退上层档/中性
+      neutral: 50                       # 样本不足时的回退仓位 %
+
 sizing:
   method: fixed_tier                   # fixed_tier | kelly_conservative
   max_position: 0.5

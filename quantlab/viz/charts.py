@@ -105,6 +105,56 @@ def plot_return_hist(df: pd.DataFrame, cond, forward: int = 1):
     return fig
 
 
+def plot_securitization(cn: pd.Series, us: pd.Series, cn_pct: pd.Series | None = None):
+    """证券化率 / 巴菲特指标对比：中国(每日) vs 美国(季度) + 中国自身历史分位。
+
+    Args:
+        cn / us: 市值÷GDP 比率(%)，index=日期。
+        cn_pct: 中国比率在自身历史中的分位(%)，画在右轴。
+    """
+    go = _go()
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=cn.index, y=cn, mode="lines", name="中国 证券化率%",
+                             line_color=UP_COLOR))
+    fig.add_trace(go.Scatter(x=us.index, y=us, mode="lines", name="美国 证券化率%",
+                             line_color="#1f77b4"))
+    fig.add_hline(y=100, line_dash="dash", line_color="#888",
+                  annotation_text="100%（市值=GDP）", annotation_position="top left")
+    if cn_pct is not None and len(cn_pct):
+        fig.add_trace(go.Scatter(x=cn_pct.index, y=cn_pct, mode="lines", yaxis="y2",
+                                 name="中国 历史分位%", line=dict(color="#ff7f0e", width=1),
+                                 opacity=0.45))
+        fig.update_layout(yaxis2=dict(title="历史分位 %", overlaying="y", side="right",
+                                      range=[0, 100], showgrid=False))
+    fig.update_layout(title="证券化率 / 巴菲特指标：中国 vs 美国",
+                      yaxis=dict(title="市值 / GDP  (%)"))
+    return style_timeseries(fig)
+
+
+def plot_allocation_backtest(eq: pd.DataFrame):
+    """温度计加减仓走查：策略 vs 买入持有净值(对数左轴) + 仓位(右轴填充)。
+
+    Args:
+        eq: 列 ``strategy`` / ``buy_hold`` / ``position``，index=日期。
+    """
+    go = _go()
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=eq.index, y=eq["position"] * 100, yaxis="y2",
+                             name="仓位 %", fill="tozeroy", line=dict(width=0),
+                             fillcolor="rgba(255,127,14,0.18)", hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=eq.index, y=eq["strategy"], name="温度择仓",
+                             line_color=UP_COLOR))
+    fig.add_trace(go.Scatter(x=eq.index, y=eq["buy_hold"], name="买入持有",
+                             line=dict(color="#888", dash="dot")))
+    fig.update_layout(
+        title="温度计加减仓 走查回测（净值起点=1，左轴对数）",
+        yaxis=dict(title="净值", type="log"),
+        yaxis2=dict(title="仓位 %", overlaying="y", side="right",
+                    range=[0, 100], showgrid=False),
+    )
+    return style_timeseries(fig)
+
+
 def plot_compare(series_map: dict[str, pd.Series]):
     """多标的归一化净值对比（起点=1）。"""
     go = _go()
