@@ -46,6 +46,7 @@ DEFAULT_PARAMS: dict[str, float] = {
     "cap": 100.0,          # 仓位上限 %
     "min_samples": 40,     # 区间样本下限；不足回退上层档/中性
     "neutral": 50.0,       # 样本不足时的回退仓位 %
+    "deadband": 10.0,      # 仓位死区/滞回(个百分点)：目标漂移＜此值不动，降换手不丢绩效
 }
 DEFAULT_INDEX = "000300"   # 沪深300（2005 起全历史 + 最可交易；中证全指仅 2011 起）
 
@@ -187,11 +188,38 @@ def regime_table(net: pd.Series, price: pd.DataFrame, p: dict[str, float]) -> pd
 
 # ── live 推荐 ─────────────────────────────────────────────────────────────
 
-def _confidence(n: int, ci_low: float, ci_high: float) -> str:
-    decisive = (ci_low > 0.5) or (ci_high < 0.5)
-    if n >= 60 and decisive:
+def _deadband(series: pd.Series, thresh: float) -> pd.Series:
+    """滞回：目标值漂移 < thresh 时保持不动，≥thresh 才跳到新目标。滤小抖动、不滞后大 move。
+
+    NaN 透传（持有上一有效值）；thresh 与 series 同量纲。
+    """
+    held = np.nan
+    out = np.empty(len(series))
+    for i, v in enumerate(series.to_numpy()):
+        if np.isnan(v):
+            out[i] = held
+            continue
+        if np.isnan(held) or abs(v - held) >= thresh:
+            held = v
+        out[i] = held
+    return pd.Series(out, index=series.index, name=series.name)
+
+
+def _eff_n(n: int, horizon: int) -> float:
+    """有效样本量：日频前向收益按 horizon 重叠，独立样本 ≈ n/horizon（自相关打折）。"""
+    return max(1.0, n / max(1, horizon))
+
+
+def _confidence(n: int, win: float, horizon: int) -> str:
+    """置信度：用有效样本量(自相关打折) + Wilson 区间是否离开 50%。"""
+    eff = _eff_n(n, horizon)
+    if not (eff >= 1 and 0 <= win <= 1):
+        return "低"
+    lo, hi = wilson_interval(int(round(win * eff)), int(round(eff)))
+    decisive = (lo > 0.5) or (hi < 0.5)
+    if eff >= 8 and decisive:
         return "高"
-    if n >= 30:
+    if eff >= 4:
         return "中"
     return "低"
 
@@ -232,19 +260,31 @@ def recommend_position(market: str = "CN", horizon: int | None = None, refresh: 
     row = table[table["cell"] == cell]
     if len(row):
         r = row.iloc[0]
-        n, target = int(r["n"]), float(r["position"])
+        n = int(r["n"])
         mean_fwd, median_fwd, win = float(r["mean"]), float(r["median"]), float(r["win"])
-        ci_low, ci_high, mae_mean = float(r["ci_low"]), float(r["ci_high"]), float(r["mae"])
+        mae_mean = float(r["mae"])
     else:  # 理论上不该发生（cell 必在表内）
-        n, target = 0, p["neutral"]
-        mean_fwd = median_fwd = win = ci_low = ci_high = mae_mean = float("nan")
+        n = 0
+        mean_fwd = median_fwd = win = mae_mean = float("nan")
+
+    # 目标仓位走滞回：把全样本各日的区间仓位连成序列、过死区，取末值＝当下可执行目标
+    pos_map = table.set_index("cell")["position"]
+    target_series = lab["cell"].map(pos_map).ffill()
+    target = float(_deadband(target_series, p["deadband"]).iloc[-1])
+
+    # Wilson 区间按有效样本量(自相关打折)重算，给"诚实"的更宽区间
+    if n and pd.notna(win):
+        eff = _eff_n(n, int(p["horizon"]))
+        ci_low, ci_high = wilson_interval(int(round(win * eff)), int(round(eff)))
+    else:
+        ci_low = ci_high = float("nan")
 
     return PositionAdvice(
         date=nt.index[-1], index=INDEX_NAMES.get(sym, sym),
         net=float(last["net"]), top=float(last["top"]),
         bottom=float(last["bottom"]), momentum=mom, turning=turning, band=band, regime=cell,
         target=target, verdict=_verdict(target, turning),
-        confidence=_confidence(n, ci_low, ci_high), horizon=int(p["horizon"]), n=n,
+        confidence=_confidence(n, win, int(p["horizon"])), horizon=int(p["horizon"]), n=n,
         mean_fwd=mean_fwd, median_fwd=median_fwd, win_rate=win,
         ci_low=ci_low, ci_high=ci_high, mae_mean=mae_mean,
     )
@@ -283,7 +323,10 @@ def causal_positions(net: pd.Series, price: pd.DataFrame, p: dict[str, float]) -
         s = scores[c_now]
         frac = 0.5 if smax <= smin else (s - smin) / (smax - smin)
         out[i] = p["floor"] + (p["cap"] - p["floor"]) * np.clip(frac, 0.0, 1.0)
-    return pd.Series(out, index=idx, name="position") / 100.0
+    pos = pd.Series(out, index=idx, name="position")
+    if p.get("deadband", 0) > 0:                       # 滞回：滤小抖动、降换手（不滞后大 move）
+        pos = _deadband(pos, p["deadband"])
+    return pos / 100.0
 
 
 def _perf(strat: pd.Series, mkt: pd.Series, pos: pd.Series) -> dict[str, float]:

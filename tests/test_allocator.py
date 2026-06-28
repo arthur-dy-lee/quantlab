@@ -112,3 +112,36 @@ def test_backtest_shape_and_finite(monkeypatch):
     assert len(eq) > 0 and np.isfinite(eq["strategy"].iloc[-1])
     assert eq["position"].between(0, 1).all()
     assert {"strat_cagr", "bh_cagr", "strat_maxdd", "strat_calmar", "avg_exposure"} <= set(metrics)
+
+
+# ── 滞回(死区) 与 置信度打折 ──────────────────────────────────────────────
+
+def test_deadband_holds_small_jumps_but_follows_big():
+    """小漂移被死区吸住、不动；超过阈值才跳；无未来函数(逐点因果)。"""
+    s = pd.Series([50, 53, 48, 51, 70, 71, 69, 40],
+                  index=pd.date_range("2020-01-01", periods=8, freq="D"))
+    out = al._deadband(s, 10.0)
+    assert (out.iloc[:4] == 50).all()       # 50→53→48→51 漂移＜10 → 全保持 50
+    assert out.iloc[4] == 70                 # 51→70 跳变≥10 → 跟上
+    assert (out.iloc[5:7] == 70).all()       # 71/69 漂移＜10 → 保持 70
+    assert out.iloc[7] == 40                 # 70→40 ≥10 → 跟上
+
+
+def test_deadband_reduces_turnover():
+    """同口径下，加死区的累计换手 ≤ 不加死区；仓位仍在 [0,1]。"""
+    n = 1000
+    net = _net(45 * np.sin(np.linspace(0, 20, n)))["net"]
+    price = _price(100 * np.cumprod(1 + 0.0005 * np.cos(np.linspace(0, 20, n))))
+    raw0 = al.causal_positions(net, price, {**al.DEFAULT_PARAMS, "deadband": 0})
+    rawd = al.causal_positions(net, price, {**al.DEFAULT_PARAMS, "deadband": 12})
+    assert rawd.diff().abs().sum() <= raw0.diff().abs().sum() + 1e-9
+    assert rawd.dropna().between(0, 1).all()
+
+
+def test_confidence_deflates_for_autocorrelation():
+    """同样名义 n，horizon 越大→有效样本越少→置信度不高于短 horizon。"""
+    rank = {"低": 0, "中": 1, "高": 2}
+    short = al._confidence(n=600, win=0.75, horizon=5)     # eff≈120
+    long = al._confidence(n=600, win=0.75, horizon=120)    # eff≈5
+    assert rank[long] <= rank[short]
+    assert al._eff_n(600, 60) < 600                         # 确有打折

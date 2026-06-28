@@ -39,6 +39,7 @@ thermometer:                           # 市场温度计 v1（A股）；见 rese
       cap: 100                          # 仓位上限 %
       min_samples: 40                   # 区间样本下限；不足回退上层档/中性
       neutral: 50                       # 样本不足时的回退仓位 %
+      deadband: 10                      # 仓位死区/滞回(个百分点)：目标漂移＜此值不动，降换手不丢绩效
 
 sizing:
   method: fixed_tier                   # fixed_tier | kelly_conservative
