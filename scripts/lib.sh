@@ -13,16 +13,10 @@ LOG="$PROJ/data/update.log"
 
 ts() { date '+%Y-%m-%d %H:%M:%S'; }
 
-# pp_push <标题> <正文>  —— 推送到个人微信(PushPlus 公众号)。未配置 token 则静默跳过。
+# pp_push <标题> <正文>  —— 多通道推送(PushPlus微信 / 钉钉 / Bark，配了哪个发哪个)。
+# 实际逻辑在 scripts/notify.py；秘钥由本文件 source 的 ~/.quantlab.env 提供并 export。
 pp_push() {
-  local title="$1" content="$2"
-  [ -z "${PUSHPLUS_TOKEN:-}" ] && { echo "[$(ts)] PUSHPLUS_TOKEN 未配置，跳过推送" >> "$LOG"; return 0; }
-  # 用 python 安全地构造 JSON(避免正文里的引号/换行破坏 payload)
-  local payload
-  payload=$("$PY" -c 'import json,sys; print(json.dumps({"token":sys.argv[1],"title":sys.argv[2],"content":sys.argv[3],"template":"txt"}))' \
-    "$PUSHPLUS_TOKEN" "$title" "$content")
   local resp
-  resp=$(curl -s -m 10 -X POST https://www.pushplus.plus/send \
-    -H 'Content-Type: application/json' -d "$payload")
-  echo "[$(ts)] 推送结果: $resp" >> "$LOG"
+  resp=$("$PY" "$PROJ/scripts/notify.py" "$1" "$2" 2>>"$LOG")
+  echo "[$(ts)] 推送: $resp" >> "$LOG"
 }
