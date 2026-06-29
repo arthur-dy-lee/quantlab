@@ -16,7 +16,10 @@ ts() { date '+%Y-%m-%d %H:%M:%S'; }
 # pp_push <标题> <正文>  —— 多通道推送(PushPlus微信 / 钉钉 / Bark，配了哪个发哪个)。
 # 实际逻辑在 scripts/notify.py；秘钥由本文件 source 的 ~/.quantlab.env 提供并 export。
 pp_push() {
-  local resp
-  resp=$("$PY" "$PROJ/scripts/notify.py" "$1" "$2" 2>>"$LOG")
+  local title="$1" content="$2" temp resp
+  temp=$("$PY" "$PROJ/scripts/thermometer_line.py" 2>>"$LOG")   # 当前A股温度，算不出则空
+  [ -n "$temp" ] && content="${content}
+${temp}"
+  resp=$("$PY" "$PROJ/scripts/notify.py" "$title" "$content" 2>>"$LOG")
   echo "[$(ts)] 推送: $resp" >> "$LOG"
 }
