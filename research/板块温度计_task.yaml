@@ -1,0 +1,144 @@
+# 板块温度计 v1 任务拆解（设计见 板块温度计_v1详细设计.md §11）
+# status: todo | doing | done | blocked
+# 执行顺序见文末 execution_order；同一 wave 内可并行。
+
+meta:
+  project: 板块温度计 v1（A股 9 板块）
+  design_doc: research/板块温度计_v1详细设计.md
+  created: 2026-07-02
+  principle: 每完成一个任务即 commit；T6 验证不通过不做 T7 推送接入。
+
+tasks:
+  - id: T1
+    name: 接口验证与注册表修订
+    status: todo
+    depends_on: []
+    deliverable: 修订后的设计文档 §3 注册表（每板块确认可用的接口+代码+数据起点）
+    acceptance: 9 个板块的代理各跑通一次取数，打印首末日期与行数；估值源覆盖情况成表
+    subtasks:
+      - id: T1.1
+        name: 指数码验证
+        detail: 980017/H30184/930708/931238/000932/399986/000985 逐一试
+          index_zh_a_hist；失败的试 stock_zh_index_hist_csindex（H 开头中证行业码大概率走这个）
+      - id: T1.2
+        name: 东财板块验证
+        detail: stock_board_concept_hist_em("光通信")；确认历史起点（预期 2014±）与成交额列
+      - id: T1.3
+        name: 自建篮子成分核对
+        detail: 白银池（沿用白银敞口研究：盛达资源/兴业银锡等）、封测池（长电/通富/华天/晶方）；
+          确认各股上市日→篮子可用起点
+      - id: T1.4
+        name: 估值源验证
+        detail: index_value_hist_funddb 对 银行PB+股息率/消费PE/半导体PB/有色PB 的覆盖；
+          缺的试 stock_zh_index_value_csindex；都缺则该板块估值维度标记为无
+
+  - id: T2
+    name: 数据层 sector_source.py
+    status: todo
+    depends_on: [T1]
+    deliverable: quantlab/datasources/sector_source.py + data/sector/ 缓存 + config.yaml 板块注册表
+    acceptance: 三种 proxy 类型均归一成 date|close|amount 表；tests/test_sector_source.py
+      冒烟通过（network 标记）；离线命中缓存
+    subtasks:
+      - id: T2.1
+        name: cn_sector_ohlcv 三 proxy 归一化取数
+        detail: index/board/basket → date|close|amount；basket 等权净值（qfq 归一，
+          成分固定不回填，amount 加总后 20 日平滑）
+      - id: T2.2
+        name: cn_market_amount 全市场成交额分母
+        detail: 中证全指(000985) 成交额代理
+      - id: T2.3
+        name: cn_sector_valuation
+        detail: 按 T1.4 结果实现；源挂掉返回空序列不抛致命错（缺权归一化兜底）
+      - id: T2.4
+        name: config.yaml sector_thermometer 段
+        detail: profiles(momentum/commodity/value) + 9 板块注册（设计 §7），代码以 T1 修订为准
+      - id: T2.5
+        name: 数据层测试
+
+  - id: T3
+    name: 合成层 sector_thermometer.py
+    status: todo
+    depends_on: [T2]
+    deliverable: quantlab/signals/sector_thermometer.py + tests/test_sector_thermometer.py
+    acceptance: 合成数据测试全过——缺维度权重归一化、股息率方向取反断言、
+      尖顶→透支>90、拐头→trend_state 翻转、篮子停牌不跳变；真实数据 9 板块出温度不报错
+    subtasks:
+      - id: T3.1
+        name: 三个维度函数
+        detail: dim_overextension / dim_crowding / dim_valuation（扩张分位，复用
+          historical_percentile；子指标等权）
+      - id: T3.2
+        name: 合成与趋势状态
+        detail: sector_temperature（缺权归一化，复用 thermometer.py avail/wsum 模式）+
+          trend_state（rs60 ±2% 阈值）+ all_sectors 横截面快照
+      - id: T3.3
+        name: 插件接口占位
+        detail: dim_plugin 接口定义（返回已对齐方向的 0–100 序列），v1 不实现
+      - id: T3.4
+        name: 合成层测试
+
+  - id: T4
+    name: CLI 报告 scripts/sector_thermometer_report.py
+    status: todo
+    depends_on: [T3]
+    deliverable: 横截面快照表（温度/三维分/趋势状态/研判矩阵结论/数据起点标注）；
+      删除 scripts/sector_crowding.py（功能被吸收）
+    acceptance: 命令行一跑出全板块报告；样本 <8 年的板块带"分位低可信"标注
+
+  - id: T5
+    name: 历史回看图
+    status: todo
+    depends_on: [T3]
+    deliverable: 每板块 温度 vs 净值 双轴图，进 research/assets/
+    acceptance: 至少覆盖 2019–2021 半导体、2021 消费抱团顶，肉眼核对温度在已知顶部区间处于高位
+
+  - id: T6
+    name: 有效性验证（门禁任务）
+    status: todo
+    depends_on: [T3]
+    deliverable: research/板块温度计_验证结论.md
+    acceptance: 完成三项——①温度五分位桶 20/60 日前向收益（预期不单调，高温桶尾部更差即可）
+      ②「温度≥80×拐头→清仓，<60 恢复」vs 买入持有的回撤/收益对比（覆盖 2015、
+      2019–2021 半导体、2021 消费）③结论明确写"接入推送 yes/no + 阈值是否校准"
+    subtasks:
+      - id: T6.1
+        name: 分桶前向收益（沿用 factor_ic_report 习惯）
+      - id: T6.2
+        name: 高透支×拐头规则回测（含 rs60 ±2% 与温度 80/60 阈值敏感性）
+      - id: T6.3
+        name: 结论文档
+
+  - id: T7
+    name: 接入 scheduler 每日推送
+    status: todo
+    depends_on: [T4, T6]
+    deliverable: scheduler.sh 收盘任务追加板块温度行（仅触发研判矩阵"预警/触发"档的板块入推送，
+      避免噪音）
+    acceptance: 收盘后推送含板块温度；无预警时不加行
+
+backlog:  # v1 之后，不排期
+  - id: V1_1
+    name: v1.1 板块内部宽度 + 底部温度
+    depends_on: [T4]
+    detail: 成分股 %>MA200 并入拥挤维度（东财 cons 接口，取数重）；
+      底部温度单独设计（拥挤低≠机会，不做对称取反）
+  - id: V1_2
+    name: v1.2 首个 D 插件：黄金×美债实际利率
+    depends_on: [T3]
+    detail: TIPS 10Y（yfinance/FRED），方向=实际利率低→黄金热；插件接口首个落地样板
+  - id: V2
+    name: v2 美股板块
+    depends_on: [T3]
+    detail: us_sector_source.py(yfinance) + 美股注册表（^SOX/SMH/GDX/SIL/XLP/光通信篮子
+      COHR·LITE）+ Burry 费半 MA200 乖离全历史分位复现图；合成层零改动，
+      拥挤度降级为 ETF 成交额自身分位
+
+execution_order:
+  wave_1: [T1]            # 唯一前置，半天量级；产出直接改注册表
+  wave_2: [T2]            # 数据层
+  wave_3: [T3]            # 合成层
+  wave_4: [T4, T5, T6]    # 互不依赖，可并行；T6 是 T7 的门禁
+  wave_5: [T7]            # 仅当 T6 结论为 yes
+  note: backlog 中 V1_2/V2 只依赖 T3，若想提前看 Burry 复现图，V2 的取数+画图部分
+    可在 wave_4 并行插队（不含美股注册表全量）。
